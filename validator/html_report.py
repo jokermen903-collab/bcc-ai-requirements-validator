@@ -36,6 +36,21 @@ document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{
 """
 
 
+def plain(quote: str) -> str:
+    """Цитата для показа человеку: без разметки Markdown (**, `, рамки таблиц). Сама цитата в JSON остаётся
+    дословной — по ней верификатор ищет место в документе."""
+    import re
+    q = (quote or "").replace("**", "").replace("`", "")
+    q = re.sub(r"\s*\|\s*", " | ", q).strip(" |")
+    q = re.sub(r"(?m)^\s*[*-]\s+", "", q)
+    return re.sub(r"[ \t]+", " ", q).strip()
+
+
+def nomd(text: str) -> str:
+    """Текст замечания без выделения Markdown (правила вставляют в него фрагменты документа как есть)."""
+    return (text or "").replace("**", "").replace("`", "")
+
+
 def build(data_json: str) -> str:
     d = json.loads(data_json)
     fs = d["findings"]
@@ -81,10 +96,12 @@ def build(data_json: str) -> str:
         title = "" if owner == "правило" else f"{owner}" + (f" ({r['doc_id']})" if r and r.get("doc_id") else "")
         a(f"<div class='f {sc}' data-s='{sc}' data-src='{e(f['source'])}'><h3><span class='tag {sc}'>{e(f['severity'])}</span>"
           f"{e(f['id'])} · {e(f['criterion'])} <span class=mute>{' · ' + e(title) if title else ''} · {e(f['location'])} · {e(f['source'])}</span></h3>"
-          f"<blockquote>{e(f['quote'])}</blockquote>"
-          + "".join(f"<blockquote>{e(x['quote'])} <span class=mute>· {e(x['location'])}</span></blockquote>" for x in f.get("also", []))
-          + f"<p>{e(f['problem'])}</p><p><b>Исправить:</b> {e(f['fix'])}</p>"
-          f"<p class=mute><b>Вопрос:</b> {e(f['question'])}</p></div>")
+          f"<blockquote>{e(plain(f['quote']))}</blockquote>"
+          + "".join(f"<blockquote>{e(plain(x['quote']))} <span class=mute>· {e(x['location'])}</span></blockquote>"
+                    for x in f.get("also", []))
+          + f"<p>{e(nomd(f['problem']))}</p><p><b>Исправить:</b> {e(nomd(f['fix']))}</p>"
+          + (f"<p class=mute><b>Вопрос:</b> {e(f['question'])}</p>" if (f.get("question") or "").strip() else "")
+          + "</div>")
 
     a("<h2>Требования</h2><div class=tbl><table><tr><th>ID</th><th>В документе</th><th>Тип</th><th>Кратко</th><th>Замечаний</th></tr>")
     for r in d["requirements"]:

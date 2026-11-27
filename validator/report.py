@@ -151,14 +151,18 @@ def build(res: Result) -> str:
 
 
 def _finding(a, n, f, loc, extra=""):
+    from .html_report import plain
     meta = "; ".join(x for x in [loc.where(f.quote), extra, source(f)] if x)
-    a(f"- **{n} [{f.severity.value}] {f.criterion}** ({meta}): «{f.quote}»  ")
+    a(f"- **{n} [{f.severity.value}] {f.criterion}** ({meta}): «{plain(f.quote)}»  ")
     a(f"  Проблема: {f.problem}  ")
     also = getattr(f, "also_quotes", [])
     if also:
-        a("  Тот же дефект также здесь: " + "; ".join(f"{loc.where(q)} «{q}»" for q in also) + "  ")
-    a(f"  Исправить: {f.fix}  ")
-    a(f"  Вопрос: {f.question}")
+        a("  Тот же дефект также здесь: " + "; ".join(f"{loc.where(q)} «{plain(q)}»" for q in also) + "  ")
+    if (f.question or "").strip():
+        a(f"  Исправить: {f.fix}  ")
+        a(f"  Вопрос: {f.question}")
+    else:
+        a(f"  Исправить: {f.fix}")
 
 
 def to_json(res: Result) -> str:

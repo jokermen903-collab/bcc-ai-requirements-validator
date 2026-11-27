@@ -152,7 +152,9 @@ class H(BaseHTTPRequestHandler):
             self._json({"error": "Нужен PDF, DOCX, MD или TXT"}, 400)
             return False
         OUT.mkdir(parents=True, exist_ok=True)
-        dest = OUT / ("input" + Path(fname).suffix.lower())
+        # сохраняем под исходным именем (оно попадает в шапку отчёта); опасные символы заменяем
+        safe = "".join(ch if ch.isalnum() or ch in "-_. ()" else "_" for ch in Path(fname).stem).strip(" .") or "document"
+        dest = OUT / (safe[:80] + Path(fname).suffix.lower())
         dest.write_bytes(fileobj[1])
         with LOCK:
             STATE.update(running=True, log=[], report=None, error=None, started=time.time())
