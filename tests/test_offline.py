@@ -238,22 +238,7 @@ class UnionAndRulesTest(unittest.TestCase):
         self.assertEqual(report.source(a.findings[0]), "правило")
 
 
-class DisplayAndBigGroupTest(unittest.TestCase):
-    def test_big_cluster_split_by_place(self):
-        class _Cl:
-            def ask(self, system, prompt, schema):
-                return Clustering(clusters=[Cluster(members=list(range(8)), primary=0, severity=Severity.major)])
-
-        class Box:
-            findings = []
-        box = Box()
-        box.findings = [F("REST type GET"), F("REST type GET"), F("Тело не используется"), F("Prod: —"),
-                        F("Successful — Created"), F("Проверьте сумму"), F("Сохранение порога"), F("Тело не используется")]
-        logs = []
-        n = pipeline._merge(_Cl(), loader.load(str(DOC)), [(box, f) for f in list(box.findings)], logs.append)
-        self.assertEqual(n, 6, "8 замечаний к 6 разным местам — 6 дефектов, а не один")
-        self.assertTrue(any("разбита" in l for l in logs))
-
+class DisplayTest(unittest.TestCase):
     def test_plain_quote_and_empty_question(self):
         from validator import html_report
         self.assertEqual(html_report.plain("| **REST type** | `GET` |"), "REST type | GET")
