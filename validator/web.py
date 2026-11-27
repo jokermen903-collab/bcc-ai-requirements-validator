@@ -63,7 +63,8 @@ def _run(path: Path, use_gold: bool):
         llm = llm_mod.from_env()
         llm.log = _log
         _log(f"Документ: {path.name}, строк: {len(doc.lines)}; модели: {', '.join(llm.chain)}")
-        res = pipeline.run(llm, doc, log=_log)
+        extras = llm_mod.ensemble_from_env(exclude=llm.chain[0], log=_log)
+        res = pipeline.run(llm, doc, log=_log, ensemble=extras)
         data = report.to_json(res)
         OUT.mkdir(parents=True, exist_ok=True)
         (OUT / "report.md").write_text(report.build(res), encoding="utf-8")
