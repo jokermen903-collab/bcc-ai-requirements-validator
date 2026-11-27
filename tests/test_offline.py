@@ -359,3 +359,27 @@ class LLMRobustnessTest(unittest.TestCase):
         report.agent_version.cache_clear()
         v = report.agent_version()
         self.assertIs(report.agent_version(), v)
+
+class BrokenInputTest(unittest.TestCase):
+    """Повреждённый, пустой или неподдерживаемый документ: отчёт-диагностика вместо аварийного завершения."""
+
+    def _run(self, name, data):
+        import tempfile
+        from validator.__main__ import main
+        d = Path(tempfile.mkdtemp())
+        src = d / name
+        src.write_bytes(data)
+        out = d / "report.md"
+        code = main([str(src), "-o", str(out)])
+        self.assertEqual(code, 2)
+        self.assertIn("документ не обработан", out.read_text(encoding="utf-8"))
+        self.assertTrue(out.with_suffix(".html").exists())
+
+    def test_corrupted_pdf(self):
+        self._run("broken.pdf", b"%PDF-1.4 \x00\x01 garbage, not a pdf")
+
+    def test_empty_document(self):
+        self._run("empty.md", b"   \n\n")
+
+    def test_unsupported_format(self):
+        self._run("doc.xyz", b"text")

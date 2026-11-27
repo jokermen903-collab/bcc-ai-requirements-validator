@@ -30,7 +30,7 @@ copy .env.example .env                # macOS/Linux: cp .env.example .env
 python -m validator docs/requirements.md -o reports/report.md
 ```
 
-Отчёт появится в `reports/report.md`, рядом лягут `reports/report.html` и `reports/report.json`. Вход: PDF, DOCX, MD или TXT.
+Отчёт появится в `reports/report.md`, рядом лягут `reports/report.html` и `reports/report.json`. Вход: PDF, DOCX, MD или TXT, любой документ с требованиями, а не только документ организаторов. Если файл повреждён, пустой (например, скан без текстового слоя) или в неподдерживаемом формате, агент не падает, а записывает в тот же путь отчёт-диагностику с причиной и советом, что сделать, и завершается с кодом 2.
 
 Одной командой со сверкой по эталону: `run.bat` на Windows или `./run.sh` на macOS и Linux (по умолчанию берут `docs/requirements.md`, можно передать свой файл).
 

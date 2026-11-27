@@ -36,7 +36,10 @@ def main(argv=None):
 
     load_dotenv()
     report.agent_version()  # зафиксировать версию до того, как прогон перезапишет отчёты в git
-    doc = loader.load(a.input)
+    try:
+        doc = loader.load(a.input)
+    except Exception as e:  # повреждённый/пустой/неподдерживаемый файл: диагностика в отчёт, без трейсбека
+        return _diagnostic_report(a, e)
     llm = llm_mod.from_env(a.model, cache=not a.no_cache)
     print(f"Документ: {doc.path.name}, строк: {len(doc.lines)}; модели (по порядку): {', '.join(llm.chain)}")
     extras = llm_mod.ensemble_from_env(a.ensemble, exclude=llm.chain[0], cache=not a.no_cache)
@@ -69,6 +72,38 @@ def main(argv=None):
         ev = out.with_name(out.stem + "_eval.md")
         ev.write_text(evaluate.render(results, gold, m, found, used), encoding="utf-8")
         print(f"Полнота против эталона: {len(found)}/{len(gold)}. Оценка: {ev.resolve()}")
+
+
+def _diagnostic_report(a, err) -> int:
+    """Документ не прочитан: пишем понятный отчёт-диагностику вместо аварийного завершения."""
+    import datetime
+    import html as _html
+
+    kind = type(err).__name__
+    hints = {
+        "FileNotFoundError": "Проверьте путь к файлу.",
+        "ValueError": "Если это скан, сначала распознайте текст (OCR) или передайте DOCX/MD-версию.",
+    }
+    hint = hints.get(kind, "Файл повреждён или не читается библиотекой разбора. Пересохраните его "
+                           "(например, «Печать в PDF») или передайте DOCX/MD-версию.")
+    md = (
+        "# Отчёт о проверке требований: документ не обработан\n\n"
+        f"- Входной файл: `{a.input}`\n"
+        f"- Время: {datetime.datetime.now().isoformat(timespec='seconds')}\n"
+        "- Статус: **проверка не выполнена**, модель не вызывалась\n\n"
+        "## Диагностика\n\n"
+        f"- Тип ошибки: `{kind}`\n- Сообщение: {err}\n\n"
+        f"## Что сделать\n\n{hint}\n"
+    )
+    out = Path(a.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(md, encoding="utf-8")
+    out.with_suffix(".html").write_text(
+        "<!doctype html><meta charset='utf-8'><title>Документ не обработан</title>"
+        f"<pre style='white-space:pre-wrap;font:15px/1.5 system-ui'>{_html.escape(md)}</pre>",
+        encoding="utf-8")
+    print(f"Документ не прочитан ({kind}): {err}\nДиагностика записана в отчёт: {out.resolve()}")
+    return 2
 
 
 if __name__ == "__main__":
