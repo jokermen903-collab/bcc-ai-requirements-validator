@@ -306,6 +306,13 @@ class QuotePrefixTest(unittest.TestCase):
         self.assertEqual(clean_quote("Обычная цитата (без префикса): текст"), "Обычная цитата (без префикса): текст")
 
 
+class TitleTest(unittest.TestCase):
+    def test_markdown_heading_stripped_from_title(self):
+        from validator.models import Segmentation
+        self.assertEqual(Segmentation(document_title="# Уведомление о расходах", requirements=[]).document_title,
+                         "Уведомление о расходах")
+
+
 if __name__ == "__main__":
     unittest.main()
 

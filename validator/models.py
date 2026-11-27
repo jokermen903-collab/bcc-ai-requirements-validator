@@ -2,7 +2,7 @@
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, PrivateAttr, Field
+from pydantic import BaseModel, PrivateAttr, Field, field_validator
 
 
 class Severity(str, Enum):
@@ -22,6 +22,12 @@ class Requirement(BaseModel):
 
 class Segmentation(BaseModel):
     document_title: str
+
+    @field_validator("document_title")
+    @classmethod
+    def _strip_markup(cls, v: str) -> str:
+        """Модель иногда отдаёт заголовок вместе с разметкой Markdown («# Название»)."""
+        return (v or "").strip().lstrip("#").strip().strip("*_ ").strip()
     requirements: List[Requirement]
     _source: str = PrivateAttr(default="модель")  # кто нарезал: модель или код; в схему для LLM не входит
 
