@@ -228,7 +228,8 @@ def audit_lens(llm, doc: Document, seg: Segmentation, name: str, checklist) -> L
         items = "\n".join(f"- {c}" for c in checklist)
     prompt = (
         f"Целевой проход «{name}». Проверь документ ТОЛЬКО по этому чеклисту, пункт за пунктом, "
-        "в criterion укажи название прохода из квадратных скобок, если они есть, "
+        "в criterion укажи только название прохода из квадратных скобок (если скобок нет — нарушенное свойство), "
+        "не копируй в criterion текст пункта чеклиста, "
         "и сообщи о каждом найденном дефекте отдельным замечанием. Если пункт выполнен — замечание не нужно. "
         "Проверяй логически: сопоставляй разные места документа, пересчитывай примеры. "
         "В related_ids укажи report_id затронутых требований.\n\nЧЕКЛИСТ:\n" + items
@@ -394,9 +395,8 @@ def _analyze(llm, doc: Document, seg: Segmentation, full: bool, use_lenses: bool
             name = g[0] if len(g) == 1 else "; ".join(g)
             lc = audit_lens(llm, doc, seg, name, criteria.LENSES[g[0]] if len(g) == 1
                             else {n: criteria.LENSES[n] for n in g})
-            if len(g) == 1:
-                for f in lc.findings:
-                    f.criterion = f"{f.criterion} · {name}"
+            for f in lc.findings:
+                f.criterion = criteria.normalize_criterion(f.criterion, g[0])
             sc.findings.extend(lc.findings)
             log(f"     проход «{name}»: {len(lc.findings)}")
 
@@ -408,7 +408,9 @@ def _analyze(llm, doc: Document, seg: Segmentation, full: bool, use_lenses: bool
             scn = simulate(llm, doc, seg, part)
             for x in scn.scenarios:
                 if x.finding and not x.outcome_defined:
-                    x.finding.criterion = f"{x.finding.criterion} · Сценарий: {x.scenario[:80]}"
+                    crit = criteria.normalize_criterion(x.finding.criterion, "Однозначность")
+                    x.finding.criterion = f"{crit} · прогон сценария"
+                    x.finding.problem = f"Сценарий: {x.scenario.strip().rstrip('.')}. {x.finding.problem}"
                     x.finding.related_ids = sorted(set(x.finding.related_ids) | {x.report_id})
                     sc.findings.append(x.finding)
                     n_sc += 1
@@ -446,10 +448,11 @@ def run(llm, doc: Document, ask: Optional[Callable[[str], str]] = None, log=prin
         use_lenses: bool = True, full: Optional[bool] = None, ensemble: Optional[list] = None) -> Result:
     """ensemble — дополнительные модели (объекты LLM). Они проверяют те же нарезанные требования (шаги 3–4)
     параллельно с основной, их замечания объединяются, а слияние дублей, критик и итог делает основная модель.
-    Без ensemble поведение прежнее."""
-    """full=None (по умолчанию) — режим по модели: облегчённая (lite) модель с высоким лимитом получает
+    Без ensemble поведение прежнее.
+    full=None (по умолчанию) — режим по модели: облегчённая (lite) модель с высоким лимитом получает
     полный режим, остальные — экономный. full=False — экономный режим: ≤3 пакета проверки требований и 3 группы проходов,
     весь прогон около 12–14 запросов. full=True — пакеты по 6 и каждый проход отдельно (точнее, но 20+ запросов)."""
+    _SOURCE.clear(), CONFIRMED.clear(), _SOURCES.clear()  # служебные отметки прошлого прогона (веб-оболочка)
     loc = Locator(doc)
     log("1/8 Нарезка требований")
     seg = segment(llm, doc, log)
@@ -460,8 +463,9 @@ def run(llm, doc: Document, ask: Optional[Callable[[str], str]] = None, log=prin
     log(f"     сработало правил: {len(rf)}")
 
     if full is None:
-        full = "lite" in str(getattr(llm, "model", "")).lower()
-        log(f"     режим: {'полный (узкие проходы, у облегчённой модели лимит выше)' if full else 'экономный'}")
+        m = str(getattr(llm, "model", "")).lower()
+        full = "lite" in m or m.startswith("cerebras:")  # у этих моделей бесплатный лимит выше
+        log(f"     режим: {'полный (узкие проходы, у модели высокий лимит запросов)' if full else 'экономный'}")
 
     extras = list(ensemble or [])
     if not extras:

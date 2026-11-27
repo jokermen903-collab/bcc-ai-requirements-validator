@@ -261,7 +261,7 @@ class AdaptiveModeTest(unittest.TestCase):
         eco = FakeLLM()
         pipeline.run(eco, loader.load(str(DOC)), log=lambda *_: None)
         self.assertGreater(lite.calls, eco.calls + 8)
-        self.assertTrue(any("Сценарий" in f.criterion for _, f in res.all_findings()))
+        self.assertTrue(any("прогон сценария" in f.criterion for _, f in res.all_findings()))
 
 
 class EnsembleTest(unittest.TestCase):
@@ -285,6 +285,15 @@ class EnsembleTest(unittest.TestCase):
         res2 = pipeline.run(FakeLLM(), loader.load(str(DOC)), log=logs.append, ensemble=[Broken()])
         self.assertTrue(any("не отработала" in str(l) for l in logs))
         self.assertGreater(len(res2.all_findings()), 0)
+
+
+class CriterionTest(unittest.TestCase):
+    def test_prompt_text_not_leaked_into_criterion(self):
+        from validator.criteria import normalize_criterion as n
+        self.assertEqual(n("ПЕРЕСЧИТАЙ каждый пример по правилам", "Дата, время и периоды"), "Дата, время и периоды")
+        self.assertEqual(n("[Контракт API] есть ли Prod-адрес, спецификация (Swagger)", "x"), "Контракт API")
+        self.assertEqual(n("Непротиворечивость", "x"), "Непротиворечивость")
+        self.assertEqual(n("", "Однозначность"), "Однозначность")
 
 
 if __name__ == "__main__":
