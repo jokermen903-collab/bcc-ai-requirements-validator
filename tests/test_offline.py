@@ -296,6 +296,16 @@ class CriterionTest(unittest.TestCase):
         self.assertEqual(n("", "Однозначность"), "Однозначность")
 
 
+class QuotePrefixTest(unittest.TestCase):
+    def test_service_prefix_removed_from_quote(self):
+        from validator.pipeline import clean_quote
+        self.assertEqual(clean_quote('R-51 (без номера, 403. Unsuccessful — Forbidden, прочее): {"message":"x"}'),
+                         '{"message":"x"}')
+        self.assertEqual(clean_quote("R-07-2 (Ф-2, Бизнес-логика, функциональное): Месяц определяется"),
+                         "Месяц определяется")
+        self.assertEqual(clean_quote("Обычная цитата (без префикса): текст"), "Обычная цитата (без префикса): текст")
+
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -374,9 +374,19 @@ def final_verdict(llm, res: "Result") -> Verdict:
     return llm.ask(SYSTEM, prompt, Verdict)
 
 
+# Модель иногда копирует в цитату служебный префикс из списка требований (см. _req_list):
+# «R-51 (без номера, Раздел, тип): текст». Префикса нет в документе, поэтому верная цитата отбрасывалась.
+_REQ_PREFIX = re.compile(r"^\s*R-\d+(?:-\d+)?\s*\([^()\n]*\)\s*:\s*", re.M)
+
+
+def clean_quote(q: str) -> str:
+    return _REQ_PREFIX.sub("", q or "").strip()
+
+
 def _verify(loc: Locator, findings: List[Finding], rejected: List[Finding]) -> List[Finding]:
     ok = []
     for f in findings:
+        f.quote = clean_quote(f.quote)
         (ok if loc.find(f.quote) else rejected).append(f)
     return ok
 
@@ -555,8 +565,14 @@ def run(llm, doc: Document, ask: Optional[Callable[[str], str]] = None, log=prin
             restored = 0
             for i, d in enumerate(important):
                 x = decs.get(i)
-                proven = x and x.dismiss and (x.evidence_quote.strip() == "" and "дубл" in x.reason.lower()
-                                               or (x.evidence_quote.strip() and loc.find(x.evidence_quote)))
+                ev = x.evidence_quote.strip() if x else ""
+                dup = x and ("дубл" in x.reason.lower() or "повтор" in x.reason.lower())
+                ev_at = loc.find(ev) if ev else None
+                # цитата-«основание», указывающая на то же место, что и само замечание, ничего не доказывает:
+                # критик просто повторил спорный текст
+                own = {loc.find(q) for q in [d.finding.quote, *getattr(d.finding, "also_quotes", [])] if q}
+                self_ref = bool(ev_at) and ev_at in own and not dup
+                proven = x and x.dismiss and not self_ref and (ev == "" and dup or bool(ev_at))
                 if not proven:
                     d.finding.severity = Severity(d.original)
                     d.owner.findings.append(d.finding)
