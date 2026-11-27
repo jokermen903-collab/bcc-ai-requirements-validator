@@ -298,3 +298,35 @@ class CriterionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LLMRobustnessTest(unittest.TestCase):
+    def test_placeholder_key_is_ignored(self):
+        import os
+        from unittest import mock
+        from validator import llm as llm_mod
+        with mock.patch.dict(os.environ, {"CEREBRAS_API_KEY": "your_cerebras_api_key_here"}):
+            self.assertIsNone(llm_mod.env_key("CEREBRAS_API_KEY"))
+        with mock.patch.dict(os.environ, {"CEREBRAS_API_KEY": "csk-real"}):
+            self.assertEqual(llm_mod.env_key("CEREBRAS_API_KEY"), "csk-real")
+
+    def test_rejected_key_falls_through_instead_of_exit(self):
+        from validator import llm as llm_mod
+        m = llm_mod.LLM(models=["cerebras:a", "cerebras:b"], api_key=None, cache_dir=None, log=lambda *_: None)
+        seen = []
+
+        def gen(model, *a):
+            seen.append(model)
+            if model == "cerebras:a":
+                raise llm_mod.HTTPProviderError(401, "bad key")
+            return '{"document_title": "t", "requirements": []}'
+        m._generate = gen
+        out = m.ask("s", "p", Segmentation)  # не SystemExit: модель с плохим ключом выбывает
+        self.assertEqual(out.document_title, "t")
+        self.assertEqual(seen, ["cerebras:a", "cerebras:b"])
+        self.assertIn("cerebras:a", m.gone)
+
+    def test_agent_version_is_fixed_once(self):
+        report.agent_version.cache_clear()
+        v = report.agent_version()
+        self.assertIs(report.agent_version(), v)

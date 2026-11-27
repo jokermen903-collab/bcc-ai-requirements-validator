@@ -1,5 +1,6 @@
 """Отчёт в Markdown по разделам из ТЗ хакатона (п. 6) + выгрузка JSON."""
 import datetime as dt
+import functools
 import json
 import subprocess
 from pathlib import Path
@@ -9,7 +10,10 @@ from .pipeline import SEV_ORDER, Result
 from .rules import RuleFinding
 
 
+@functools.lru_cache(maxsize=1)
 def agent_version() -> str:
+    """Считается один раз за процесс: первый вызов — до записи отчётов, поэтому report.md, .json и .html
+    получают одну и ту же версию, без «-dirty» от только что перезаписанного соседнего отчёта."""
     try:
         r = subprocess.run(["git", "describe", "--tags", "--always", "--dirty"], capture_output=True, text=True,
                            cwd=Path(__file__).parent, timeout=5)

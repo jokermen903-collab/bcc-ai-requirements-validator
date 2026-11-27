@@ -30,8 +30,14 @@ PROVIDERS = {
     "groq": ("https://api.groq.com/openai/v1", "GROQ_API_KEY"),
     "openrouter": ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
     "cerebras": ("https://api.cerebras.ai/v1", "CEREBRAS_API_KEY"),
-    "openai": (os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"), "OPENAI_API_KEY"),
+    "openai": (None, "OPENAI_API_KEY"),  # адрес берётся из OPENAI_BASE_URL при запросе (после load_dotenv)
 }
+
+
+def env_key(name: str) -> Optional[str]:
+    """Ключ из окружения; заглушка из .env.example (your_..._here) считается отсутствующим ключом."""
+    v = (os.getenv(name) or "").strip()
+    return None if not v or v.startswith("your_") else v
 
 
 class HTTPProviderError(Exception):
@@ -54,7 +60,8 @@ def _openai_compatible(provider: str, model: str, system: str, prompt: str, sche
     import urllib.request
 
     base, key_env = PROVIDERS[provider]
-    key = os.getenv(key_env)
+    base = base or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    key = env_key(key_env)
     if not key:
         raise HTTPProviderError(404, f"нет {key_env} в .env")
     sys_msg = (system + "\n\nОтвечай строго одним JSON-объектом (json) без пояснений, по этой JSON Schema:\n"
@@ -227,11 +234,13 @@ class LLM:
                         code = _code(e)
                         if code in MODEL_GONE or code in (401, 403):
                             if code in (401, 403):
+                                # неверный ключ одного провайдера не должен ронять прогон (и поток ансамбля):
+                                # модель выбывает, цепочка идёт дальше; если не ответит никто — RuntimeError ниже
                                 prov = _split(model)[0]
                                 var = PROVIDERS[prov][1] if prov else "GEMINI_API_KEY"
-                                raise SystemExit(f"Ключ отклонён ({code}) для {model}. Проверьте {var} в .env"
-                                                 + ("" if prov else " и обновите google-genai: "
-                                                    "pip install -U -r requirements.txt")) from e
+                                self.log(f"     {model}: ключ отклонён ({code}). Проверьте {var} в .env"
+                                         + ("" if prov else " и обновите google-genai: "
+                                            "pip install -U -r requirements.txt"))
                             self.gone.add(model)
                             break  # модель не существует или недоступна ключу — к следующей
                         if code is not None and code not in RETRYABLE:
@@ -262,18 +271,16 @@ def ensemble_from_env(spec: Optional[str] = None, exclude: str = "", cache: bool
     """Дополнительные модели ансамбля: --ensemble или ENSEMBLE_MODELS. Модель без нужного ключа пропускается
     с предупреждением, так что с одним ключом агент работает как раньше."""
     spec = spec if spec is not None else os.getenv("ENSEMBLE_MODELS", "")
-    key = os.getenv("GEMINI_API_KEY")
-    if key and key.startswith("your_"):
-        key = None
+    key = env_key("GEMINI_API_KEY")
     out = []
     for m in [x.strip() for x in spec.split(",") if x.strip()]:
         if m == exclude:
             continue
         prov = _split(m)[0]
-        if (prov and not os.getenv(PROVIDERS[prov][1])) or (not prov and not key):
+        if (prov and not env_key(PROVIDERS[prov][1])) or (not prov and not key):
             log(f"     ансамбль: пропускаю {m} — нет ключа в .env")
             continue
-        out.append(LLM(models=[m], api_key=key, cache_dir=".cache" if cache else None))
+        out.append(LLM(models=[m], api_key=key, cache_dir=".cache" if cache else None, log=log))
     return out
 
 
@@ -281,13 +288,11 @@ def from_env(model_override: Optional[str] = None, cache: bool = True) -> LLM:
     """Цепочка моделей: --model (или GEMINI_MODEL), затем GEMINI_FALLBACK_MODELS.
     Модель с префиксом провайдера (groq:, openrouter:, cerebras:, openai:) идёт через OpenAI-совместимый API
     с ключом из соответствующей переменной .env; модели Gemini остаются запасными."""
-    key = os.getenv("GEMINI_API_KEY")
-    if key and key.startswith("your_"):
-        key = None
+    key = env_key("GEMINI_API_KEY")
     primary = model_override or os.getenv("GEMINI_MODEL", DEFAULT_CHAIN[0])
     fallback = os.getenv("GEMINI_FALLBACK_MODELS", ",".join(DEFAULT_CHAIN[1:])).split(",")
     models = [primary, *fallback]
-    has_other = any(_split(m)[0] and os.getenv(PROVIDERS[_split(m)[0]][1]) for m in models)
+    has_other = any(_split(m)[0] and env_key(PROVIDERS[_split(m)[0]][1]) for m in models)
     if not key and not has_other:
         raise SystemExit("Нет ключа модели. Укажите GEMINI_API_KEY (или GROQ_API_KEY / OPENROUTER_API_KEY / "
                          "CEREBRAS_API_KEY с --model провайдер:модель) в .env, см. README.")

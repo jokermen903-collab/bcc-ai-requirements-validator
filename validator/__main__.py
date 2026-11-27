@@ -18,7 +18,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="validator", description="Агент статической проверки требований")
     p.add_argument("input", help="Документ требований: PDF, DOCX, MD, TXT")
     p.add_argument("-o", "--output", default="reports/report.md", help="Файл отчёта .md (рядом появятся .html и .json)")
-    p.add_argument("--model", help="Модель Gemini (иначе GEMINI_MODEL из .env)")
+    p.add_argument("--model", help="Основная модель, например cerebras:gpt-oss-120b или gemini-3.8-flash (иначе GEMINI_MODEL из .env)")
     p.add_argument("-i", "--interactive", action="store_true", help="Задать уточняющие вопросы в терминале")
     p.add_argument("--gold", help="Эталон дефектов (gold/defects.md): посчитать полноту агента")
     p.add_argument("--no-critic", action="store_true", help="Отключить шаг критика")
@@ -35,6 +35,7 @@ def main(argv=None):
     a = p.parse_args(argv)
 
     load_dotenv()
+    report.agent_version()  # зафиксировать версию до того, как прогон перезапишет отчёты в git
     doc = loader.load(a.input)
     llm = llm_mod.from_env(a.model, cache=not a.no_cache)
     print(f"Документ: {doc.path.name}, строк: {len(doc.lines)}; модели (по порядку): {', '.join(llm.chain)}")

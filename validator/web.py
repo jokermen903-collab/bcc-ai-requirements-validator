@@ -59,6 +59,8 @@ def _log(msg: str):
 
 def _run(path: Path, use_gold: bool):
     try:
+        report.agent_version.cache_clear()  # сервер живёт долго: версия на момент старта этого прогона
+        report.agent_version()
         doc = loader.load(str(path))
         llm = llm_mod.from_env()
         llm.log = _log
@@ -118,9 +120,21 @@ class H(BaseHTTPRequestHandler):
         with LOCK:
             if STATE["running"]:
                 return self._json({"error": "Проверка уже идёт"}, 409)
+            STATE["running"] = True  # занять сразу: два одновременных POST не запустят два прогона
+        started = False
+        try:
+            started = self._accept()
+        finally:
+            if not started:
+                with LOCK:
+                    STATE["running"] = False
+
+    def _accept(self) -> bool:
+        """Принять файл и запустить прогон. False — запрос отклонён (ответ уже отправлен)."""
         n = int(self.headers.get("Content-Length", 0))
         if n > 50 * 1024 * 1024:
-            return self._json({"error": "Файл больше 50 МБ"}, 413)
+            self._json({"error": "Файл больше 50 МБ"}, 413)
+            return False
         raw = b"Content-Type: " + self.headers.get("Content-Type", "").encode() + b"\r\n\r\n" + self.rfile.read(n)
         msg = BytesParser(policy=email_policy).parsebytes(raw)
         fileobj, use_gold = None, False
@@ -131,10 +145,12 @@ class H(BaseHTTPRequestHandler):
             elif name == "gold":
                 use_gold = True
         if not fileobj or not fileobj[1]:
-            return self._json({"error": "Файл не получен"}, 400)
+            self._json({"error": "Файл не получен"}, 400)
+            return False
         fname = Path(fileobj[0]).name
         if Path(fname).suffix.lower() not in (".pdf", ".docx", ".md", ".txt", ".markdown"):
-            return self._json({"error": "Нужен PDF, DOCX, MD или TXT"}, 400)
+            self._json({"error": "Нужен PDF, DOCX, MD или TXT"}, 400)
+            return False
         OUT.mkdir(parents=True, exist_ok=True)
         dest = OUT / ("input" + Path(fname).suffix.lower())
         dest.write_bytes(fileobj[1])
@@ -142,6 +158,7 @@ class H(BaseHTTPRequestHandler):
             STATE.update(running=True, log=[], report=None, error=None, started=time.time())
         threading.Thread(target=_run, args=(dest, use_gold), daemon=True).start()
         self._json({"ok": True})
+        return True
 
     def log_message(self, *a):
         pass
